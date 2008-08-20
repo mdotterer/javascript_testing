@@ -1,18 +1,21 @@
 
-# Replace the path to js.jar with something that works in your environment
-namespace :test do  
+namespace :test do
   desc "Runs all the JSSpec tests and collects the results"
   task :jsspec do
-    Dir.chdir("test/javascripts") do
+    Dir.chdir("spec/javascripts") do
       all_fine = true
-      if ENV["TEST"]
-        all_fine = false unless system("java -jar ~/TOOLS/rhino1_7R1/js.jar #{ENV["TEST"]}")
-      else
-        Dir.glob("spec*.js").each do |file|
-          all_fine = false unless system("java -jar ~/TOOLS/rhino1_7R1/js.jar #{file}")
-        end
-      end
+      files = ENV["TEST"] ? ENV["TEST"] : Dir.glob("*_spec.js").join(" ")
+      all_fine = false unless system("java -jar ./rhino/js.jar ./jsspec/runner.js #{files}")
       raise "JSSpec test failures" unless all_fine
+    end
+  end
+  namespace :jsspec do
+    desc "Compiles all the JSSpec tests into an html file that can be run in the browser"
+    task :compile do
+      Dir.chdir("spec/javascripts") do
+        files = ENV["TEST"] ? ENV["TEST"] : Dir.glob("*_spec.js").join(" ")
+        system("java -jar ./rhino/js.jar ./jsspec/compiler.js #{files}")
+      end
     end
   end
 end
@@ -29,7 +32,7 @@ end
 #         e
 #       end
 #     end.compact
-#   
+#
 #     exceptions.each {|e| puts e }
 #     raise "Test failures" unless exceptions.empty?
 #   end

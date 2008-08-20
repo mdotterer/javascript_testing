@@ -1,10 +1,8 @@
-load("env.js");  
 window.location = "index.html";
-load("../../public/javascripts/lib/prototype.js");  
-load("../../public/javascripts/lib/scriptaculous.js");
-load("../../public/javascripts/lib/effects.js");
-load("../../public/javascripts/lib/controls.js");
-load("../../public/javascripts/lib/dragdrop.js");
+load("../../public/javascripts/prototype.js");
+//load("../../public/javascripts/scriptaculous.js");
+//load("../../public/javascripts/effects.js");
+//load("../../public/javascripts/controls.js");
+//load("../../public/javascripts/dragdrop.js");
 load("jsspec/prototypeForJsspec.js");
-load("jsspec/jsspec.js");
-load("jsspec/consoleReportForRake.js");
+//load("jsspec/consoleReportForRake.js");

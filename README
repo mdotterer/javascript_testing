@@ -1,1 +1,26 @@
-This collection of files is useful for getting a Rails app up and running with headless JSSpec tests for your JavaScript files.  
+This collection of files is useful for getting a Rails app up and running with headless JSSpec tests for your JavaScript files.
+
+CHANGELOG
+
+2008/08/19 - mdotterer
+ - Updated JSSpec to 2008/01/07 Version
+ - Created console_logger.js to display results of new version to console
+   - Added color
+ - Created runner.js to run any number of spec files with one set of results
+    and to pull out execution code to a common place
+ - Monkey patched JSSpec::Spec::extractOutSpecialEntries to ignore methods that
+     Prototype adds to Object
+ - Pulled generic library loads out of config.js so that config.js can be completely
+    customized for your project
+ - Added Rhino into the repository for convience
+ - Changed the rake task to run all of the files in
+    spec/javascripts/*_spec.js at once using runner.js
+
+TODO
+ - Create a way to compile specs into an html file that can be run in the browser
+ - Make color optional
+
+KNOWN ISSUES
+ - When prototype is included and a spec fails the error report lists:
+     'Cannot find function each in object [ "" ].'
+ - Expected and actual values don't appear in the report when a spec fails

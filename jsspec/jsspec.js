@@ -1,587 +1,1512 @@
 /**
- * JsSpec library, version '0.2.2' (c) 2007 Nicolas Sanguinetti
+ * JSSpec
  *
- * JsSpec for JavaScript is freely distributable under the terms of an MIT-style
- * license. For details, see the web site:
- *   http://code.google.com/p/js-spec/
+ * Copyright 2007 Alan Kang
+ *  - mailto:jania902@gmail.com
+ *  - http://jania.pe.kr
  *
+ * http://jania.pe.kr/aw/moin.cgi/JSSpec
+ *
+ * Dependencies:
+ *  - diff_match_patch.js ( http://code.google.com/p/google-diff-match-patch )
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc, 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-var JsSpec = {
-	Version: '0.2.2'
+/**
+ * Namespace
+ */
+
+var JSSpec = {
+	specs: [],
+	
+	EMPTY_FUNCTION: function() {},
+	
+	Browser: {
+		Trident: navigator.appName == "Microsoft Internet Explorer",
+		Webkit: navigator.userAgent.indexOf('AppleWebKit/') > -1,
+		Gecko: navigator.userAgent.indexOf('Gecko') > -1 && navigator.userAgent.indexOf('KHTML') == -1,
+		Presto: navigator.appName == "Opera"
+	}
 };
 
-Object.extend(Object, {
-	respondTo: function(object, name) {
-		return Object.isFunction(object[name]);
-	},
-	isNumber: function(object) {
-		return typeof object == "number" || object instanceof Number;
-	}
-})
 
-var Matcher = {
-	create: function(name, methods) {
-		this[name] = Class.create(methods);
-		this[name].name = name;
-		return this[name];
-	},
-	addHelpers: function(methods) {
-		$H(methods).each(function(pair) {
-			if (!Object.isFunction(pair[1]))
-				pair[1] = methods[pair[1]];
-			Matcher.Helpers[pair[0]] = pair[1];
-			Matcher.Helpers[pair[0].underscore()] = pair[1];
-		});
-	},
-	Helpers: {}
-};
 
-Matcher.addHelpers({
-	be: function(expected) {
-		return new Matcher.Be("===", expected);
-	},
-	equal: function(expected) {
-		return new Matcher.Be("==", expected);
-	},
-	beLessThan: function(expected) {
-		return new Matcher.Be("<", expected);
-	},
-	beLessOrEqualThan: function(expected) {
-		return new Matcher.Be("<=", expected);
-	},
-	beGreaterThan: function(expected) {
-		return new Matcher.Be(">", expected);
-	},
-	beGreaterOrEqualThan: function(expected) {
-		return new Matcher.Be(">=", expected);
-	}
-});
+/**
+ * Executor
+ */
+JSSpec.Executor = function(target, onSuccess, onException) {
+	this.target = target;
+	this.onSuccess = typeof onSuccess == 'function' ? onSuccess : JSSpec.EMPTY_FUNCTION;
+	this.onException = typeof onException == 'function' ? onException : JSSpec.EMPTY_FUNCTION;
+	
+	if(JSSpec.Browser.Trident) {
+		// Exception handler for Trident. It helps to collect exact line number where exception occured.
+		window.onerror = function(message, fileName, lineNumber) {
+			var self = window._curExecutor;
+			var ex = {message:message, fileName:fileName, lineNumber:lineNumber};
 
-Matcher.create("Be", {
-	initialize: function(comparison, expected) {
-		this.expected = expected;
-		this.comparison = comparison;
-	},
-	matches: function(actual) {
-		this.actual = actual;
-		return this[this.comparison]();
-	},
-	"===": function() {
-		return Object.isNumber(this.actual) && Object.isNumber(this.expected)
-			? this.actual == this.expected
-			: this.actual === this.expected;
-	},
-	"==": function() {
-		return Object.isArray(this.expected) && Object.isArray(this.actual)
-			? this.expected.size() == this.actual.size() &&
-					this.expected.all(function(element, index) { return element == this.actual[index] }.bind(this))
-			: this.actual == this.expected;
-	},
-	"<": function() {
-		return this.actual < this.expected;
-	},
-	"<=": function() {
-		return this.actual <= this.expected;
-	},
-	">": function() {
-		return this.actual > this.expected;
-	},
-	">=": function() {
-		return this.actual >= this.expected;
-	},
-	failureMessage: function(maybe_not) {
-		return "expected " + Object.inspect(this.expected) + (maybe_not || " ") + "to be " + this.comparison.replace(/_/, " ") +
-			" " + Object.inspect(this.actual);
-	},
-	negativeFailureMessage: function() {
-		return this.failureMessage(" not ");
-	}
-});
-Matcher.addHelpers({
-	beClose: function(expected, delta) {
-		return new Matcher.BeClose(expected, delta);
-	}
-});
-
-Matcher.create("BeClose", {
-	initialize: function(expected, delta) {
-		this.expected = expected;
-		this.delta = delta;
-	},
-	matches: function(target) {
-		this.target = target;
-		return (this.target - this.expected).abs() < this.delta;
-	},
-	failureMessage: function() {
-		return "expected " + this.expected + " +/- (< " + this.delta + "), got " + this.target;
-	},
-	negativeFailureMessage: function() {
-		return "expected " + this.expected + " not to be within " + this.delta + " of " + this.target;
-	}
-});
-Matcher.addHelpers({
-	change: function(message) {
-		return new Matcher.Change(message);
-	}
-});
-
-Matcher.create("Change", {
-	initialize: function(message) {
-		this.message = message;
-		this.usingBy = this.usingFrom = this.usingTo = false;
-		this.args = [];
-	},
-	matches: function(actual) {
-		this.actual = actual;
-		this.executeChange();
-		if (this.usingFrom && this.from != this.before)
-			return false;
-		if (this.usingTo && this.to != this.after)
-			return false;
-		if (this.usingBy)
-			return this.before + this.amount == this.after;
-		return this.before != this.after;
-	},
-	executeChange: function() {
-		this.before = Object.respondTo(this.actual, this.message) ? this.actual[this.message]() : this.actual[this.message];
-		Object.respondTo(this.actual, this.receiver) ? this.actual[this.receiver].apply(this.actual, this.args) : this.actual[this.receiver];
-		this.after = Object.respondTo(this.actual, this.message) ? this.actual[this.message]() : this.actual[this.message];
-	},
-	failureMessage: function() {
-		if (this.usingTo)
-			return this.message + " should have been changed to " + Object.inspect(this.to) + ", but is now " + Object.inspect(this.after);
-		if (this.usingFrom)
-			return this.message + " should have initially been " + Object.inspect(this.from) + ", but was " + Object.inspect(this.before);
-		if (this.usingBy)
-			return this.message + " should have been changed by " + Object.inspect(this.amount) +
-				", but was changed by " + Object.inspect(this.after - this.before);
-		return this.message + " should have changed, but is still " + Object.inspect(this.before);
-	},
-	negativeFailureMessage: function() {
-		return this.message + " should not have changed, but did change from " +
-			Object.inspect(this.before) + " to " + Object.inspect(this.after);
-	},
-	by: function(amount) {
-		this.usingBy = true;
-		this.amount = amount;
-		return this;
-	},
-	from: function(from) {
-		this.usingFrom = true;
-		this.from = from;
-		return this;
-	},
-	to: function(to) {
-		this.usingTo = true;
-		this.to = to;
-		return this;
-	},
-	after: function() {
-		this.args = $A(arguments)
-		this.receiver = this.args.shift();
-		return this;
-	}
-});
-
-["afterCalling", "inResponseTo"].each(function(method) {
-	Matcher.Change.prototype[method] = Matcher.Change.prototype[method.underscore()] = Matcher.Change.prototype.after;
-})
-Matcher.addHelpers({
-	haveExactly: function(expected, collection) {
-		var args = $A(arguments).slice(2);
-		return new Matcher.Have(expected, collection, "exactly", args);
-	},
-	haveAtLeast: function(expected, collection) {
-		var args = $A(arguments).slice(2);
-		return new Matcher.Have(expected, collection, "at_least", args);
-	},
-	haveAtMost: function(expected, collection) {
-		var args = $A(arguments).slice(2);
-		return new Matcher.Have(expected, collection, "at_most", args);
-	},
-	have: 'haveExactly'
-});
-
-Matcher.create("Have", {
-	initialize: function(expected, collection, relativity, args) {
-		this.expected = expected == "no" ? 0 : expected;
-		this.collection = collection;
-		this.relativity = relativity || "exactly";
-		this.args = args || [];
-	},
-	matches: function(actual) {
-		var actuals = this.actualsFor(actual);
-		this.actual = Object.isFunction(actuals.size) ? actuals.size() : actuals.length;
-		switch (this.relativity) {
-			case "exactly":  return this.expected == this.actual;
-			case "at_least": return this.expected <= this.actual;
-			case "at_most":  return this.expected >= this.actual;
-		}
-	},
-	failureMessage: function(relation) {
-		return "expected #{relativity} #{collection}, got #{actual}".interpolate({
-			relativity: this.readableRelativity() + this.expected,
-			collection: this.collection,
-			actual:     this.actual
-		});
-	},
-	negativeFailureMessage: function() {
-		switch (this.relativity) {
-			case 'exactly':  return "expected target not to have #{expected} #{collection}, got #{actual}".interpolate(this);
-			case 'at_least': return "instead of 'should not have at least' use 'should have at most'";
-			case 'at_most':  return "instead of 'should not have at most' use 'should have at least'"
-		}
-	},
-	readableRelativity: function() {
-		return (this.relativity.replace(/exactly/, "").replace(/_/, " ") + " ").replace(/^\s+/, '');
-	},
-	actualsFor: function(actual) {
-		if (!Object.respondTo(actual, this.collection) && this.collection == "elements") {
-			return actual;
-		} else if (Object.respondTo(actual, this.collection)) {
-			return actual[this.collection].apply(actual, this.args);
-		} else {
-			return actual[this.collection];
-		}
-	}
-});
-Matcher.addHelpers({
-	include: function() {
-		return new Matcher.Include(arguments);
-	}
-});
-
-Matcher.create("Include", {
-	initialize: function(expecteds) {
-		this.expecteds = $A(expecteds);
-	},
-	matches: function(actual) {
-		this.actual = actual;
-		return this.expecteds.all(function(expected) { return actual.include(expected) });
-	},
-	failureMessage: function() {
-		return this.message();
-	},
-	negativeFailureMessage: function() {
-		return this.message("not ");
-	},
-	message: function(maybe_not) {
-		return "expected #{actual} #{maybe_not}to include #{expecteds}".interpolate({
-			maybe_not: maybe_not || "",
-			actual:    this.actual.inspect(),
-			expecteds: this.expecteds.map(Object.inspect).join(", ")
-		});
-	}
-});
-Matcher.addHelpers({
-	match: function(expected) {
-		return new Matcher.Match(expected);
-	}
-});
-
-Matcher.create("Match", {
-	initialize: function(expected) {
-		this.expected = expected;
-	},
-	matches: function(actual) {
-		this.actual = actual;
-		return this.actual.match(this.expected);
-	},
-	failureMessage: function() {
-		return this.message("");
-	},
-	negativeFailureMessage: function() {
-		return this.message("not ")
-	},
-	message: function(maybe_not) {
-		return "expected " + Object.inspect(this.actual) + " " + maybe_not + "to match " + Object.inspect(this.expected);
-	}
-});
-Matcher.addHelpers({
-	respondTo: function() {
-		return new Matcher.RespondTo($A(arguments));
-	}
-});
-
-Matcher.create("RespondTo", {
-	initialize: function(names) {
-		this.names = names;
-	},
-	matches: function(actual) {
-		this.actual = actual;
-		this.nonResponsive = this.names.reject(Object.respondTo.curry(actual));
-		return this.nonResponsive.size() == 0;
-	},
-	failureMessage: function() {
-		return "expected target to respond to " + this.nonResponsive.join(", ");
-	},
-	negativeFailureMessage: function() {
-		return "expected target not to respond to " + this.names.join(", ");
-	}
-});
-Matcher.addHelpers({
-	satisfy: function(block) {
-		return new Matcher.Satisfy(block);
-	}
-});
-
-Matcher.create("Satisfy", {
-	initialize: function(block) {
-		this.block = block;
-	},
-	matches: function(actual) {
-		this.actual = actual;
-		return this.block(actual);
-	},
-	failureMessage: function() {
-		return "expected " + Object.inspect(this.actual) + " to satisfy the block";
-	},
-	negativeFailureMessage: function() {
-		return "expected " + Object.inspect(this.actual) + " not to satisfy the block";
-	}
-});
-Context = Class.create({
-	initialize: function(name, specs) {
-		this.name = name;
-		this.filters = { beforeAll: [], beforeEach: [], afterEach: [], afterAll: [] };
-		this.specs = [];
-		(specs || Prototype.K).apply(this);
-		Specs.register(this);
-		this.running = null;
-	},
-	addFilter: function(type, filter) {
-		this.filters[type.camelize()].push(filter);
-	},
-	before: function(type, filter) {
-		if (arguments.length == 1)
-			var filter = type, type = "each";
-		this.addFilter("before-" + type, filter);
-	},
-	after: function(type, filter) {
-		if (arguments.length == 1)
-			var filter = type, type = "each";
-		this.addFilter("after-" + type, filter);
-	},
-	it: function(description, spec) {
-		this.specs.push(new Context.Spec(description, spec));
-	},
-	describe: function() {
-		return this.name + ":\n" + this.specs.map(function(spec) { return "- " + spec[0] }).join("\n");
-	},
-	each: function(iterator, binding) {
-		var sandbox = {};
-		this.filters.beforeAll.invoke("apply", sandbox);
-		this.specs.map(function(spec) {
-			spec.compile(this.filters);
-			spec.run = spec.run.curry(sandbox);
-			return spec;
-		}, this).each(iterator, binding);
-		this.filters.afterAll.invoke("apply", sandbox);
-	},
-	toElement: function() {
-		var element = new Element("div").insert(new Element("h3").update(this.name)),
-		    table = new Element("table", { cellspacing: 0, cellpadding: 0 });
-		element.insert(table);
-		this.specs.each(Element.insert.curry(table));
-		return element;
-	},
-	expect: function(object) {
-		Expectation.extend(object);
-		return object;
-	}
-});
-
-Context.Spec = Class.create((function() {
-	var specId = 0;
-	return {
-		initialize: function(name, spec) {
-			this.name = name;
-			this.id = 'spec_' + (++specId);
-			this.spec = spec;
-			this.pending = !spec;
-			this.compiled = false;
-		},
-		compile: function(filters) {
-			if (!this.compiled && !this.pending) {
-				this.spec = filters.beforeEach.concat(this.spec).concat(filters.afterEach);
-				this.compiled = true;
+			if(JSSpec._secondPass)  {
+				ex = self.mergeExceptions(JSSpec._assertionFailure, ex);
+				delete JSSpec._secondPass;
+				delete JSSpec._assertionFailure;
+				
+				ex.type = "failure";
+				self.onException(self, ex);
+			} else if(JSSpec._assertionFailure) {
+				JSSpec._secondPass = true;
+				self.run();
+			} else {
+				self.onException(self, ex);
 			}
-			return this;
-		},
-		run: function(sandbox) {
-			if (this.pending)
-				throw new Context.PendingSpec(this);
-			this.spec.invoke("apply", sandbox);
-		},
-		toElement: function() {
-			return new Element("tr", { id: this.id }).insert(
-				new Element("th", { scope: 'row' }).update(this.name)
-			);
-		}
+			
+			return true;
+		};
 	}
-})());
+};
+JSSpec.Executor.prototype.mergeExceptions = function(assertionFailure, normalException) {
+	var merged = {
+		message:assertionFailure.message,
+		fileName:normalException.fileName,
+		lineNumber:normalException.lineNumber
+	};
+	
+	return merged;
+};
 
-Context.PendingSpec = function(spec) {
-	this.name   = "Pending";
-	this.message = spec;
-}
-
-Specs = Object.extend([], {
-	report: "HTMLReport",
-	register: Array.prototype.push,
-	run: function(element) {
-		var report = new Specs[Specs.report](element);
-		this.each(function(context) {
-			report.beforeEach && report.beforeEach(context);
-			context.each(function(spec) {
+JSSpec.Executor.prototype.run = function() {
+	var self = this;
+	var target = this.target;
+	var onSuccess = this.onSuccess;
+	var onException = this.onException;
+	
+	window.setTimeout(
+		function() {
+			var result;
+			if(JSSpec.Browser.Trident) {
+				window._curExecutor = self;
+				
+				result = self.target();
+				self.onSuccess(self, result);
+			} else {
 				try {
-					spec.run();
-					report.pass(spec);
-				} catch(e) {
-					switch (e.name) {
-						case "Pending":
-							return report.pending(spec);
-						case "UnmetExpectation":
-							return report.fail(spec, e.message);
-						default:
-							return report.error(spec, e.message);
+					result = self.target();
+					self.onSuccess(self, result);
+				} catch(ex) {
+					if(JSSpec.Browser.Webkit) ex = {message:ex.message, fileName:ex.sourceURL, lineNumber:ex.line};
+					
+					if(JSSpec._secondPass)  {
+						ex = self.mergeExceptions(JSSpec._assertionFailure, ex);
+						delete JSSpec._secondPass;
+						delete JSSpec._assertionFailure;
+						
+						ex.type = "failure";
+						self.onException(self, ex);
+					} else if(JSSpec._assertionFailure) {
+						JSSpec._secondPass = true;
+						self.run();
+					} else {
+						self.onException(self, ex);
 					}
 				}
-			});
-			report.afterEach && report.afterEach(context);
-		});
-		report.afterAll && report.afterAll();
-	},
-	describe: function() {
-		return this.invoke("describe").join("\n\n");
-	}
-});
-
-Specs.HTMLReport = Class.create({
-	initialize: function(element) {
-		this.element = $(element) || $("spec_results") || this.createElement();
-	},
-	beforeEach: function(context) {
-		this.element.insert(context);
-	},
-	pass: function(spec) {
-		$(spec.id).addClassName("pass").insert({ top: this.label("passed") }).insert(new Element("td").update("&nbsp;"));
-	},
-	pending: function(spec) {
-		$(spec.id).addClassName("pending").insert({ top: this.label("pending") }).insert(new Element("td").update("&nbsp;"));
-	},
-	fail: function(spec, message) {
-		$(spec.id).addClassName("fail").insert({ top: this.label("failed") }).insert(new Element("td").update(message));
-	},
-	error: function(spec, message) {
-		$(spec.id).addClassName("error").insert({ top: this.label("error") }).insert(new Element("td").update(message));
-	},
-	createElement: function() {
-		var element = new Element("div");
-		$(document.body).insert(element);
-		return element;
-	},
-	label: function(text) {
-		return new Element("td", { className: "label" }).update("[" + text + "]");
-	}
-});
-
-Specs.ConsoleReport = Class.create({
-	initialize: function() {
-		this.passed = this.failed = this.pending = this.errors = 0;
-		this.failureMessages = [];
-		this.errorMessages = [];
-	},
-	beforeEach: function() {
-		this.startTime = new Date().getTime();
-	},
-	afterEach: function() {
-		var duration = new Date().getTime() - this.startTime;
-		var total = this.passed + this.failed + this.pending + this.errors;
-		if (this.failed) print("\n\nFailures:\n" + this.failureMessages.join("\n"));
-		if (this.errors) print("\nErrors:\n" + this.errorMessages.join("\n"));
-
-		var result = "\n";
-		if (this.passed)  result += "#{passed} passed. ";
-		if (this.pending) result += "#{pending} pending. ";
-		if (this.failed)  result += "#{failed} failure" + (this.failed == 1 ? ". " : "s. ");
-		if (this.errors)  result += "#{errors} error" + (this.errors == 1 ? ". " : "s. ");
-		print(result.interpolate(this) + "\n");
-		print("Run " + total + " examples in " + (duration / 1000) + "seconds.\n");
-	},
-	pass: function() {
-		this.passed++;
-		print(".");
-	},
-	pending: function(spec) {
-		this.pending++;
-		print("P");
-	},
-	fail: function(spec, message) {
-		this.failed++;
-		print("F");
-		this.failureMessages.push("- '#{name}' with #{message}".interpolate({ name: spec.name, message: message }));
-	},
-	error: function(spec, message) {
-		this.errors++;
-		print("E");
-		this.errorMessages.push("- '#{name}' with #{message}".interpolate({ name: spec.name, message: message }));
-	}
-});
-Expectation = (function() {
-	var should = function(matcher) {
-		if (!matcher.matches(this))
-			throw new Expectation.Unmet(matcher.failureMessage());
-	};
-	var shouldNot = function(matcher) {
-		if (!Object.isFunction(matcher.negativeFailureMessage))
-			throw Error("matcher " + Object.inspect(matcher) + " does not allow shouldNot");
-		if (matcher.matches(this))
-			throw new Expectation.Unmet(matcher.negativeFailureMessage());
-	};
-
-	var proxiedMethods = {
-		should: function(object, matcher) {
-			return should.call(object, matcher);
-		},
-		shouldNot: function(object, matcher) {
-			return shouldNot.call(object, matcher);
-		},
-		should_not: function(object, matcher) {
-			return shouldNot.call(object, matcher);
-		}
-	};
-	Element.addMethods(proxiedMethods);
-	//Event.extend(proxiedMethods); --> how do I extend Events? gotta pay more attention to the source
-
-	var extend = function() {
-		$A(arguments).each(function(object) {
-			if (object.prototype) {
-				object = object.prototype;
 			}
-			object.should = should;
-			object.shouldNot = object.should_not = shouldNot;
-		});
+		},
+		0
+	);
+};
+
+
+
+/**
+ * CompositeExecutor composites one or more executors and execute them sequencially.
+ */
+JSSpec.CompositeExecutor = function(onSuccess, onException, continueOnException) {
+	this.queue = [];
+	this.onSuccess = typeof onSuccess == 'function' ? onSuccess : JSSpec.EMPTY_FUNCTION;
+	this.onException = typeof onException == 'function' ? onException : JSSpec.EMPTY_FUNCTION;
+	this.continueOnException = !!continueOnException;
+};
+
+JSSpec.CompositeExecutor.prototype.addFunction = function(func) {
+	this.addExecutor(new JSSpec.Executor(func));
+};
+
+JSSpec.CompositeExecutor.prototype.addExecutor = function(executor) {
+	var last = this.queue.length == 0 ? null : this.queue[this.queue.length - 1];
+	if(last) {
+		last.next = executor;
+	}
+	
+	executor.parent = this;
+	executor.onSuccessBackup = executor.onSuccess;
+	executor.onSuccess = function(result) {
+		this.onSuccessBackup(result);
+		if(this.next) {
+			this.next.run();
+		} else {
+			this.parent.onSuccess();
+		}
+	};
+	executor.onExceptionBackup = executor.onException;
+	executor.onException = function(executor, ex) {
+		this.onExceptionBackup(executor, ex);
+
+		if(this.parent.continueOnException) {
+			if(this.next) {
+				this.next.run();
+			} else {
+				this.parent.onSuccess();
+			}
+		} else {
+			this.parent.onException(executor, ex);
+		}
 	};
 
-	extend(Array, Date, Function, Number, RegExp, String);
-	Class.create = Class.create.wrap(function() {
-		var args = $A(arguments), proceed = args.shift(), klass = proceed.apply(Class, args);
-		extend(klass);
-		return klass;
-	});
+	this.queue.push(executor);
+};
 
-	return {
-		extend: extend,
-		Unmet: function(message) {
-			this.name = "UnmetExpectation";
-			this.message = message;
+JSSpec.CompositeExecutor.prototype.run = function() {
+	if(this.queue.length > 0) {
+		this.queue[0].run();
+	}
+};
+
+/**
+ * Spec is a set of Examples in a specific context
+ */
+JSSpec.Spec = function(context, entries) {
+	this.id = JSSpec.Spec.id++;
+	this.context = context;
+	this.url = location.href;
+	
+	this.filterEntriesByEmbeddedExpressions(entries);
+	this.extractOutSpecialEntries(entries);
+	this.examples = this.makeExamplesFromEntries(entries);
+	this.examplesMap = this.makeMapFromExamples(this.examples);
+};
+
+JSSpec.Spec.id = 0;
+JSSpec.Spec.prototype.getExamples = function() {
+	return this.examples;
+};
+
+JSSpec.Spec.prototype.hasException = function() {
+	return this.getTotalFailures() > 0 || this.getTotalErrors() > 0;
+};
+
+JSSpec.Spec.prototype.getTotalFailures = function() {
+	var examples = this.examples;
+	var failures = 0;
+	for(var i = 0; i < examples.length; i++) {
+		if(examples[i].isFailure()) failures++;
+	}
+	return failures;
+};
+
+JSSpec.Spec.prototype.getTotalErrors = function() {
+	var examples = this.examples;
+	var errors = 0;
+	for(var i = 0; i < examples.length; i++) {
+		if(examples[i].isError()) errors++;
+	}
+	return errors;
+};
+
+JSSpec.Spec.prototype.filterEntriesByEmbeddedExpressions = function(entries) {
+	var isTrue;
+	for(name in entries) {
+		var m = name.match(/\[\[(.+)\]\]/);
+		if(m && m[1]) {
+			eval("isTrue = (" + m[1] + ")");
+			if(!isTrue) delete entries[name];
 		}
 	}
-})();
-
-Spec = Matcher.Helpers;
-Spec.describe = function(contextName, map) {
-	new Context(contextName, map);
 };
+
+JSSpec.Spec.prototype.extractOutSpecialEntries = function(entries) {
+	this.beforeEach = JSSpec.EMPTY_FUNCTION;
+	this.beforeAll = JSSpec.EMPTY_FUNCTION;
+	this.afterEach = JSSpec.EMPTY_FUNCTION;
+	this.afterAll = JSSpec.EMPTY_FUNCTION;
+	
+	for(name in entries) {
+		if(name == 'before' || name == 'before each' || name == 'before_each') {
+			this.beforeEach = entries[name];
+		} else if(name == 'before all' || name == 'before_all') {
+			this.beforeAll = entries[name];
+		} else if(name == 'after' || name == 'after each' || name == 'after_each') {
+			this.afterEach = entries[name];
+		} else if(name == 'after all' || name == 'after_all') {
+			this.afterAll = entries[name];
+		}
+	}
+	
+	delete entries['before'];
+	delete entries['before each'];
+	delete entries['before_each'];
+	delete entries['before all'];
+	delete entries['before_all'];
+	delete entries['after'];
+	delete entries['after each'];
+	delete entries['after_each'];
+	delete entries['after all'];
+	delete entries['after_all'];
+};
+
+JSSpec.Spec.prototype.makeExamplesFromEntries = function(entries) {
+	var examples = [];
+	for(name in entries) {
+		examples.push(new JSSpec.Example(name, entries[name], this.beforeEach, this.afterEach));
+	}
+	return examples;
+};
+
+JSSpec.Spec.prototype.makeMapFromExamples = function(examples) {
+	var map = {};
+	for(var i = 0; i < examples.length; i++) {
+		var example = examples[i];
+		map[example.id] = examples[i];
+	}
+	return map;
+};
+
+JSSpec.Spec.prototype.getExampleById = function(id) {
+	return this.examplesMap[id];
+};
+
+JSSpec.Spec.prototype.getExecutor = function() {
+	var self = this;
+	var onException = function(executor, ex) {
+		self.exception = ex;
+	};
+	
+	var composite = new JSSpec.CompositeExecutor();
+	composite.addFunction(function() {JSSpec.log.onSpecStart(self);});
+	composite.addExecutor(new JSSpec.Executor(this.beforeAll, null, function(exec, ex) {
+		self.exception = ex;
+		JSSpec.log.onSpecEnd(self);
+	}));
+	
+	var exampleAndAfter = new JSSpec.CompositeExecutor(null,null,true);
+	for(var i = 0; i < this.examples.length; i++) {
+		exampleAndAfter.addExecutor(this.examples[i].getExecutor());
+	}
+	exampleAndAfter.addExecutor(new JSSpec.Executor(this.afterAll, null, onException));
+	exampleAndAfter.addFunction(function() {JSSpec.log.onSpecEnd(self);});
+	composite.addExecutor(exampleAndAfter);
+	
+	return composite;
+};
+
+/**
+ * Example
+ */
+JSSpec.Example = function(name, target, before, after) {
+	this.id = JSSpec.Example.id++;
+	this.name = name;
+	this.target = target;
+	this.before = before;
+	this.after = after;
+};
+
+JSSpec.Example.id = 0;
+JSSpec.Example.prototype.isFailure = function() {
+	return this.exception && this.exception.type == "failure";
+};
+
+JSSpec.Example.prototype.isError = function() {
+	return this.exception && !this.exception.type;
+};
+
+JSSpec.Example.prototype.getExecutor = function() {
+	var self = this;
+	var onException = function(executor, ex) {
+		self.exception = ex;
+	};
+	
+	var composite = new JSSpec.CompositeExecutor();
+	composite.addFunction(function() {JSSpec.log.onExampleStart(self);});
+	composite.addExecutor(new JSSpec.Executor(this.before, null, function(exec, ex) {
+		self.exception = ex;
+		JSSpec.log.onExampleEnd(self);
+	}));
+	
+	var targetAndAfter = new JSSpec.CompositeExecutor(null,null,true);
+	
+	targetAndAfter.addExecutor(new JSSpec.Executor(this.target, null, onException));
+	targetAndAfter.addExecutor(new JSSpec.Executor(this.after, null, onException));
+	targetAndAfter.addFunction(function() {JSSpec.log.onExampleEnd(self);});
+	
+	composite.addExecutor(targetAndAfter);
+	
+	return composite;
+};
+
+/**
+ * Runner
+ */
+JSSpec.Runner = function(specs, logger) {
+	JSSpec.log = logger;
+	
+	this.totalExamples = 0;
+	this.specs = [];
+	this.specsMap = {};
+	this.addAllSpecs(specs);
+};
+
+JSSpec.Runner.prototype.addAllSpecs = function(specs) {
+	for(var i = 0; i < specs.length; i++) {
+		this.addSpec(specs[i]);
+	}
+};
+
+JSSpec.Runner.prototype.addSpec = function(spec) {
+	this.specs.push(spec);
+	this.specsMap[spec.id] = spec;
+	this.totalExamples += spec.getExamples().length;
+};
+
+JSSpec.Runner.prototype.getSpecById = function(id) {
+	return this.specsMap[id];
+};
+
+JSSpec.Runner.prototype.getSpecByContext = function(context) {
+	for(var i = 0; i < this.specs.length; i++) {
+		if(this.specs[i].context == context) return this.specs[i];
+	}
+	return null;
+};
+
+JSSpec.Runner.prototype.getSpecs = function() {
+	return this.specs;
+};
+
+JSSpec.Runner.prototype.hasException = function() {
+	return this.getTotalFailures() > 0 || this.getTotalErrors() > 0;
+};
+
+JSSpec.Runner.prototype.getTotalFailures = function() {
+	var specs = this.specs;
+	var failures = 0;
+	for(var i = 0; i < specs.length; i++) {
+		failures += specs[i].getTotalFailures();
+	}
+	return failures;
+};
+
+JSSpec.Runner.prototype.getTotalErrors = function() {
+	var specs = this.specs;
+	var errors = 0;
+	for(var i = 0; i < specs.length; i++) {
+		errors += specs[i].getTotalErrors();
+	}
+	return errors;
+};
+
+
+JSSpec.Runner.prototype.run = function() {
+	JSSpec.log.onRunnerStart();
+	var executor = new JSSpec.CompositeExecutor(function() {JSSpec.log.onRunnerEnd()},null,true);
+	for(var i = 0; i < this.specs.length; i++) {
+		executor.addExecutor(this.specs[i].getExecutor());
+	}
+	executor.run();
+};
+
+
+JSSpec.Runner.prototype.rerun = function(context) {
+	JSSpec.runner = new JSSpec.Runner([this.getSpecByContext(context)], JSSpec.log);
+	JSSpec.runner.run();
+};
+
+/**
+ * Logger
+ */
+JSSpec.Logger = function() {
+	this.finishedExamples = 0;
+	this.startedAt = null;
+};
+
+JSSpec.Logger.prototype.onRunnerStart = function() {
+	this._title = document.title;
+
+	this.startedAt = new Date();
+	var container = document.getElementById('jsspec_container');
+	if(container) {
+		container.innerHTML = "";
+	} else {
+		container = document.createElement("DIV");
+		container.id = "jsspec_container";
+		document.body.appendChild(container);
+	}
+	
+	var title = document.createElement("DIV");
+	title.id = "title";
+	title.innerHTML = [
+		'<h1>JSSpec</h1>',
+		'<ul>',
+		JSSpec.options.rerun ? '<li>[<a href="?" title="rerun all specs">X</a>] ' + JSSpec.util.escapeTags(decodeURIComponent(JSSpec.options.rerun)) + '</li>' : '',
+		'	<li><span id="total_examples">' + JSSpec.runner.totalExamples + '</span> examples</li>',
+		'	<li><span id="total_failures">0</span> failures</li>',
+		'	<li><span id="total_errors">0</span> errors</li>',
+		'	<li><span id="progress">0</span>% done</li>',
+		'	<li><span id="total_elapsed">0</span> secs</li>',
+		'</ul>',
+		'<p><a href="http://jania.pe.kr/aw/moin.cgi/JSSpec">JSSpec homepage</a></p>',
+	].join("");
+	container.appendChild(title);
+
+	var list = document.createElement("DIV");
+	list.id = "list";
+	list.innerHTML = [
+		'<h2>List</h2>',
+		'<ul class="specs">',
+		function() {
+			var specs = JSSpec.runner.getSpecs();
+			var sb = [];
+			for(var i = 0; i < specs.length; i++) {
+				var spec = specs[i];
+				sb.push('<li id="spec_' + specs[i].id + '_list"><h3><a href="#spec_' + specs[i].id + '">' + JSSpec.util.escapeTags(specs[i].context) + '</a> [<a href="?rerun=' + encodeURIComponent(specs[i].context) + '">rerun</a>]</h3></li>');
+			}
+			return sb.join("");
+		}(),
+		'</ul>'
+	].join("");
+	container.appendChild(list);
+	
+	var log = document.createElement("DIV");
+	log.id = "log";
+	log.innerHTML = [
+		'<h2>Log</h2>',
+		'<ul class="specs">',
+		function() {
+			var specs = JSSpec.runner.getSpecs();
+			var sb = [];
+			for(var i = 0; i < specs.length; i++) {
+				var spec = specs[i];
+				sb.push('	<li id="spec_' + specs[i].id + '">');
+				sb.push('		<h3>' + JSSpec.util.escapeTags(specs[i].context) + ' [<a href="?rerun=' + encodeURIComponent(specs[i].context) + '">rerun</a>]</h3>');
+				sb.push('		<ul id="spec_' + specs[i].id + '_examples" class="examples">');
+				for(var j = 0; j < spec.examples.length; j++) {
+					var example = spec.examples[j];
+					sb.push('			<li id="example_' + example.id + '">')
+					sb.push('				<h4>' + JSSpec.util.escapeTags(example.name) + '</h4>')
+					sb.push('			</li>')
+				}
+				sb.push('		</ul>');
+				sb.push('	</li>');
+			}
+			return sb.join("");
+		}(),
+		'</ul>'
+	].join("");
+	
+	container.appendChild(log);
+	
+	// add event handler for toggling
+	var specs = JSSpec.runner.getSpecs();
+	var sb = [];
+	for(var i = 0; i < specs.length; i++) {
+		var spec = document.getElementById("spec_" + specs[i].id);
+		var title = spec.getElementsByTagName("H3")[0];
+		title.onclick = function(e) {
+			var target = document.getElementById(this.parentNode.id + "_examples");
+			target.style.display = target.style.display == "none" ? "block" : "none";
+			return true;
+		}
+	}
+};
+
+JSSpec.Logger.prototype.onRunnerEnd = function() {
+	if(JSSpec.runner.hasException()) {
+		var times = 4;
+		var title1 = "*" + this._title;
+		var title2 = "*F" + JSSpec.runner.getTotalFailures() + " E" + JSSpec.runner.getTotalErrors() + "* " + this._title;
+	} else {
+		var times = 2;
+		var title1 = this._title;
+		var title2 = "Success";
+	}
+	this.blinkTitle(times,title1,title2);
+};
+
+JSSpec.Logger.prototype.blinkTitle = function(times, title1, title2) {
+	var times = times * 2;
+	var mode = true;
+	
+	var f = function() {
+		if(times > 0) {
+			document.title = mode ? title1 : title2;
+			mode = !mode;
+			times--;
+			window.setTimeout(f, 500);
+		} else {
+			document.title = title1;
+		}
+	};
+	
+	f();
+};
+
+JSSpec.Logger.prototype.onSpecStart = function(spec) {
+	var spec_list = document.getElementById("spec_" + spec.id + "_list");
+	var spec_log = document.getElementById("spec_" + spec.id);
+	
+	spec_list.className = "ongoing";
+	spec_log.className = "ongoing";
+};
+
+JSSpec.Logger.prototype.onSpecEnd = function(spec) {
+	var spec_list = document.getElementById("spec_" + spec.id + "_list");
+	var spec_log = document.getElementById("spec_" + spec.id);
+	var examples = document.getElementById("spec_" + spec.id + "_examples");
+	var className = spec.hasException() ? "exception" : "success";
+
+	spec_list.className = className;
+	spec_log.className = className;
+
+	if(JSSpec.options.autocollapse && !spec.hasException()) examples.style.display = "none";
+	
+	if(spec.exception) {
+		heading.appendChild(document.createTextNode(" - " + spec.exception.message));
+	}
+};
+
+JSSpec.Logger.prototype.onExampleStart = function(example) {
+	var li = document.getElementById("example_" + example.id);
+	li.className = "ongoing";
+};
+
+JSSpec.Logger.prototype.onExampleEnd = function(example) {
+	var li = document.getElementById("example_" + example.id);
+	li.className = example.exception ? "exception" : "success";
+	
+	if(example.exception) {
+		var div = document.createElement("DIV");
+		div.innerHTML = example.exception.message + "<p><br />" + " at " + example.exception.fileName + ", line " + example.exception.lineNumber + "</p>";
+		li.appendChild(div);
+	}
+	
+	var title = document.getElementById("title");
+	var runner = JSSpec.runner;
+	
+	title.className = runner.hasException() ? "exception" : "success";
+	
+	this.finishedExamples++;
+	document.getElementById("total_failures").innerHTML = runner.getTotalFailures();
+	document.getElementById("total_errors").innerHTML = runner.getTotalErrors();
+	var progress = parseInt(this.finishedExamples / runner.totalExamples * 100);
+	document.getElementById("progress").innerHTML = progress;
+	document.getElementById("total_elapsed").innerHTML = (new Date().getTime() - this.startedAt.getTime()) / 1000;
+	
+	document.title = progress + "%: " + this._title;
+};
+
+/**
+ * IncludeMatcher
+ */
+JSSpec.IncludeMatcher = function(actual, expected, condition) {
+	this.actual = actual;
+	this.expected = expected;
+	this.condition = condition;
+	this.match = false;
+	this.explaination = this.makeExplain();
+};
+
+JSSpec.IncludeMatcher.createInstance = function(actual, expected, condition) {
+	return new JSSpec.IncludeMatcher(actual, expected, condition);
+};
+
+JSSpec.IncludeMatcher.prototype.matches = function() {
+	return this.match;
+};
+
+JSSpec.IncludeMatcher.prototype.explain = function() {
+	return this.explaination;
+};
+
+JSSpec.IncludeMatcher.prototype.makeExplain = function() {
+	if(typeof this.actual.length == 'undefined') {
+		return this.makeExplainForNotArray();
+	} else {
+		return this.makeExplainForArray();
+	}
+};
+
+JSSpec.IncludeMatcher.prototype.makeExplainForNotArray = function() {
+	if(this.condition) {
+		this.match = !!this.actual[this.expected];
+	} else {
+		this.match = !this.actual[this.expected];
+	}
+	
+	var sb = [];
+	sb.push('<p>actual value:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.actual, false, this.expected) + '</p>');
+	sb.push('<p>should ' + (this.condition ? '' : 'not') + ' include:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.expected) + '</p>');
+	return sb.join("");
+}
+;
+JSSpec.IncludeMatcher.prototype.makeExplainForArray = function() {
+	var matches;
+	if(this.condition) {
+		for(var i = 0; i < this.actual.length; i++) {
+			matches = JSSpec.EqualityMatcher.createInstance(this.expected, this.actual[i]).matches();
+			if(matches) {
+				this.match = true;
+				break;
+			}
+		}
+	} else {
+		for(var i = 0; i < this.actual.length; i++) {
+			matches = JSSpec.EqualityMatcher.createInstance(this.expected, this.actual[i]).matches();
+			if(matches) {
+				this.match = false;
+				break;
+			}
+		}
+	}
+	
+	if(this.match) return "";
+	
+	var sb = [];
+	sb.push('<p>actual value:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.actual, false, this.condition ? null : i) + '</p>');
+	sb.push('<p>should ' + (this.condition ? '' : 'not') + ' include:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.expected) + '</p>');
+	return sb.join("");
+};
+
+/**
+ * PropertyLengthMatcher
+ */
+JSSpec.PropertyLengthMatcher = function(num, property, o, condition) {
+	this.num = num;
+	this.o = o;
+	this.property = property;
+	if((property == 'characters' || property == 'items') && typeof o.length != 'undefined') {
+		this.property = 'length';
+	}
+	
+	this.condition = condition;
+	this.conditionMet = function(x) {
+		if(condition == 'exactly') return x.length == num;
+		if(condition == 'at least') return x.length >= num;
+		if(condition == 'at most') return x.length <= num;
+
+		throw "Unknown condition '" + condition + "'";
+	};
+	this.match = false;
+	this.explaination = this.makeExplain();
+};
+
+JSSpec.PropertyLengthMatcher.prototype.makeExplain = function() {
+	if(this.o._type == 'String' && this.property == 'length') {
+		this.match = this.conditionMet(this.o);
+		return this.match ? '' : this.makeExplainForString();
+	} else if(typeof this.o.length != 'undefined' && this.property == "length") {
+		this.match = this.conditionMet(this.o);
+		return this.match ? '' : this.makeExplainForArray();
+	} else if(typeof this.o[this.property] != 'undefined' && this.o[this.property] != null) {
+		this.match = this.conditionMet(this.o[this.property]);
+		return this.match ? '' : this.makeExplainForObject();
+	} else if(typeof this.o[this.property] == 'undefined' || this.o[this.property] == null) {
+		this.match = false;
+		return this.makeExplainForNoProperty();
+	}
+
+	this.match = true;
+};
+
+JSSpec.PropertyLengthMatcher.prototype.makeExplainForString = function() {
+	var sb = [];
+	
+	var exp = this.num == 0 ?
+		'be an <strong>empty string</strong>' :
+		'have <strong>' + this.condition + ' ' + this.num + ' characters</strong>';
+	
+	sb.push('<p>actual value has <strong>' + this.o.length + ' characters</strong>:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.o) + '</p>');
+	sb.push('<p>but it should ' + exp + '.</p>');
+	
+	return sb.join("");
+};
+
+JSSpec.PropertyLengthMatcher.prototype.makeExplainForArray = function() {
+	var sb = [];
+	
+	var exp = this.num == 0 ?
+		'be an <strong>empty array</strong>' :
+		'have <strong>' + this.condition + ' ' + this.num + ' items</strong>';
+
+	sb.push('<p>actual value has <strong>' + this.o.length + ' items</strong>:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.o) + '</p>');
+	sb.push('<p>but it should ' + exp + '.</p>');
+	
+	return sb.join("");
+};
+
+JSSpec.PropertyLengthMatcher.prototype.makeExplainForObject = function() {
+	var sb = [];
+
+	var exp = this.num == 0 ?
+		'be <strong>empty</strong>' :
+		'have <strong>' + this.condition + ' ' + this.num + ' ' + this.property + '.</strong>';
+
+	sb.push('<p>actual value has <strong>' + this.o[this.property].length + ' ' + this.property + '</strong>:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.o, false, this.property) + '</p>');
+	sb.push('<p>but it should ' + exp + '.</p>');
+	
+	return sb.join("");
+};
+
+JSSpec.PropertyLengthMatcher.prototype.makeExplainForNoProperty = function() {
+	var sb = [];
+	
+	sb.push('<p>actual value:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.o) + '</p>');
+	sb.push('<p>should have <strong>' + this.condition + ' ' + this.num + ' ' + this.property + '</strong> but there\'s no such property.</p>');
+	
+	return sb.join("");
+};
+
+JSSpec.PropertyLengthMatcher.prototype.matches = function() {
+	return this.match;
+};
+
+JSSpec.PropertyLengthMatcher.prototype.explain = function() {
+	return this.explaination;
+};
+
+JSSpec.PropertyLengthMatcher.createInstance = function(num, property, o, condition) {
+	return new JSSpec.PropertyLengthMatcher(num, property, o, condition);
+};
+
+/**
+ * EqualityMatcher
+ */
+JSSpec.EqualityMatcher = {};
+
+JSSpec.EqualityMatcher.createInstance = function(expected, actual) {
+	if(expected == null || actual == null) {
+		return new JSSpec.NullEqualityMatcher(expected, actual);
+	} else if(expected._type && expected._type == actual._type) {
+		if(expected._type == "String") {
+			return new JSSpec.StringEqualityMatcher(expected, actual);
+		} else if(expected._type == "Date") {
+			return new JSSpec.DateEqualityMatcher(expected, actual);
+		} else if(expected._type == "Number") {
+			return new JSSpec.NumberEqualityMatcher(expected, actual);
+		} else if(expected._type == "Array") {
+			return new JSSpec.ArrayEqualityMatcher(expected, actual);
+		} else if(expected._type == "Boolean") {
+			return new JSSpec.BooleanEqualityMatcher(expected, actual);
+		}
+	}
+	
+	return new JSSpec.ObjectEqualityMatcher(expected, actual);
+};
+
+JSSpec.EqualityMatcher.basicExplain = function(expected, actual, expectedDesc, actualDesc) {
+	var sb = [];
+	
+	sb.push(actualDesc || '<p>actual value:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(actual) + '</p>');
+	sb.push(expectedDesc || '<p>should be:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(expected) + '</p>');
+	
+	return sb.join("");
+};
+
+JSSpec.EqualityMatcher.diffExplain = function(expected, actual) {
+	var sb = [];
+
+	sb.push('<p>diff:</p>');
+	sb.push('<p style="margin-left:2em;">');
+	
+	var dmp = new diff_match_patch();
+	var diff = dmp.diff_main(expected, actual);
+	dmp.diff_cleanupEfficiency(diff);
+	
+	sb.push(JSSpec.util.inspect(dmp.diff_prettyHtml(diff), true));
+	
+	sb.push('</p>');
+	
+	return sb.join("");
+};
+
+/**
+ * BooleanEqualityMatcher
+ */
+JSSpec.BooleanEqualityMatcher = function(expected, actual) {
+	this.expected = expected;
+	this.actual = actual;
+};
+
+JSSpec.BooleanEqualityMatcher.prototype.explain = function() {
+	var sb = [];
+	
+	sb.push('<p>actual value:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.actual) + '</p>');
+	sb.push('<p>should be:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.expected) + '</p>');
+	
+	return sb.join("");
+};
+
+JSSpec.BooleanEqualityMatcher.prototype.matches = function() {
+	return this.expected == this.actual;
+};
+
+/**
+ * NullEqualityMatcher
+ */
+JSSpec.NullEqualityMatcher = function(expected, actual) {
+	this.expected = expected;
+	this.actual = actual;
+};
+
+JSSpec.NullEqualityMatcher.prototype.matches = function() {
+	return this.expected == this.actual && typeof this.expected == typeof this.actual;
+};
+
+JSSpec.NullEqualityMatcher.prototype.explain = function() {
+	return JSSpec.EqualityMatcher.basicExplain(this.expected, this.actual);
+};
+
+JSSpec.DateEqualityMatcher = function(expected, actual) {
+	this.expected = expected;
+	this.actual = actual;
+};
+
+JSSpec.DateEqualityMatcher.prototype.matches = function() {
+	return this.expected.getTime() == this.actual.getTime();
+};
+
+JSSpec.DateEqualityMatcher.prototype.explain = function() {
+	var sb = [];
+	
+	sb.push(JSSpec.EqualityMatcher.basicExplain(this.expected, this.actual));
+	sb.push(JSSpec.EqualityMatcher.diffExplain(this.expected.toString(), this.actual.toString()));
+
+	return sb.join("");
+};
+
+/**
+ * ObjectEqualityMatcher
+ */
+JSSpec.ObjectEqualityMatcher = function(expected, actual) {
+	this.expected = expected;
+	this.actual = actual;
+	this.match = this.expected == this.actual;
+	this.explaination = this.makeExplain();
+};
+
+JSSpec.ObjectEqualityMatcher.prototype.matches = function() {return this.match};
+
+JSSpec.ObjectEqualityMatcher.prototype.explain = function() {return this.explaination};
+
+JSSpec.ObjectEqualityMatcher.prototype.makeExplain = function() {
+	if(this.expected == this.actual) {
+		this.match = true;
+		return "";
+	}
+	
+	if(JSSpec.util.isDomNode(this.expected)) {
+		return this.makeExplainForDomNode();
+	}
+	
+	var key, expectedHasItem, actualHasItem;
+
+	for(key in this.expected) {
+		expectedHasItem = this.expected[key] != null && typeof this.expected[key] != 'undefined';
+		actualHasItem = this.actual[key] != null && typeof this.actual[key] != 'undefined';
+		if(expectedHasItem && !actualHasItem) return this.makeExplainForMissingItem(key);
+	}
+	for(key in this.actual) {
+		expectedHasItem = this.expected[key] != null && typeof this.expected[key] != 'undefined';
+		actualHasItem = this.actual[key] != null && typeof this.actual[key] != 'undefined';
+		if(actualHasItem && !expectedHasItem) return this.makeExplainForUnknownItem(key);
+	}
+	
+	for(key in this.expected) {
+		var matcher = JSSpec.EqualityMatcher.createInstance(this.expected[key], this.actual[key]);
+		if(!matcher.matches()) return this.makeExplainForItemMismatch(key);
+	}
+		
+	this.match = true;
+};
+
+JSSpec.ObjectEqualityMatcher.prototype.makeExplainForDomNode = function(key) {
+	var sb = [];
+	
+	sb.push(JSSpec.EqualityMatcher.basicExplain(this.expected, this.actual));
+	
+	return sb.join("");
+};
+
+JSSpec.ObjectEqualityMatcher.prototype.makeExplainForMissingItem = function(key) {
+	var sb = [];
+
+	sb.push('<p>actual value has no item named <strong>' + JSSpec.util.inspect(key) + '</strong></p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.actual, false, key) + '</p>');
+	sb.push('<p>but it should have the item whose value is <strong>' + JSSpec.util.inspect(this.expected[key]) + '</strong></p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.expected, false, key) + '</p>');
+	
+	return sb.join("");
+};
+
+JSSpec.ObjectEqualityMatcher.prototype.makeExplainForUnknownItem = function(key) {
+	var sb = [];
+
+	sb.push('<p>actual value has item named <strong>' + JSSpec.util.inspect(key) + '</strong></p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.actual, false, key) + '</p>');
+	sb.push('<p>but there should be no such item</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.expected, false, key) + '</p>');
+	
+	return sb.join("");
+};
+
+JSSpec.ObjectEqualityMatcher.prototype.makeExplainForItemMismatch = function(key) {
+	var sb = [];
+
+	sb.push('<p>actual value has an item named <strong>' + JSSpec.util.inspect(key) + '</strong> whose value is <strong>' + JSSpec.util.inspect(this.actual[key]) + '</strong></p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.actual, false, key) + '</p>');
+	sb.push('<p>but it\'s value should be <strong>' + JSSpec.util.inspect(this.expected[key]) + '</strong></p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.expected, false, key) + '</p>');
+	
+	return sb.join("");
+};
+
+
+
+
+/**
+ * ArrayEqualityMatcher
+ */
+JSSpec.ArrayEqualityMatcher = function(expected, actual) {
+	this.expected = expected;
+	this.actual = actual;
+	this.match = this.expected == this.actual;
+	this.explaination = this.makeExplain();
+};
+
+JSSpec.ArrayEqualityMatcher.prototype.matches = function() {return this.match};
+
+JSSpec.ArrayEqualityMatcher.prototype.explain = function() {return this.explaination};
+
+JSSpec.ArrayEqualityMatcher.prototype.makeExplain = function() {
+	if(this.expected.length != this.actual.length) return this.makeExplainForLengthMismatch();
+	
+	for(var i = 0; i < this.expected.length; i++) {
+		var matcher = JSSpec.EqualityMatcher.createInstance(this.expected[i], this.actual[i]);
+		if(!matcher.matches()) return this.makeExplainForItemMismatch(i);
+	}
+		
+	this.match = true;
+};
+
+JSSpec.ArrayEqualityMatcher.prototype.makeExplainForLengthMismatch = function() {
+	return JSSpec.EqualityMatcher.basicExplain(
+		this.expected,
+		this.actual,
+		'<p>but it should be <strong>' + this.expected.length + '</strong></p>',
+		'<p>actual value has <strong>' + this.actual.length + '</strong> items</p>'
+	);
+};
+
+JSSpec.ArrayEqualityMatcher.prototype.makeExplainForItemMismatch = function(index) {
+	var postfix = ["th", "st", "nd", "rd", "th"][Math.min((index + 1) % 10,4)];
+	
+	var sb = [];
+
+	sb.push('<p>' + (index + 1) + postfix + ' item (index ' + index + ') of actual value is <strong>' + JSSpec.util.inspect(this.actual[index]) + '</strong>:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.actual, false, index) + '</p>');
+	sb.push('<p>but it should be <strong>' + JSSpec.util.inspect(this.expected[index]) + '</strong>:</p>');
+	sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.expected, false, index) + '</p>');
+	
+	return sb.join("");
+};
+
+/**
+ * NumberEqualityMatcher
+ */
+JSSpec.NumberEqualityMatcher = function(expected, actual) {
+	this.expected = expected;
+	this.actual = actual;
+};
+
+JSSpec.NumberEqualityMatcher.prototype.matches = function() {
+	if(this.expected == this.actual) return true;
+};
+
+JSSpec.NumberEqualityMatcher.prototype.explain = function() {
+	return JSSpec.EqualityMatcher.basicExplain(this.expected, this.actual);
+};
+
+/**
+ * StringEqualityMatcher
+ */
+JSSpec.StringEqualityMatcher = function(expected, actual) {
+	this.expected = expected;
+	this.actual = actual;
+};
+
+JSSpec.StringEqualityMatcher.prototype.matches = function() {
+	if(this.expected == this.actual) return true;
+};
+
+JSSpec.StringEqualityMatcher.prototype.explain = function() {
+	var sb = [];
+
+	sb.push(JSSpec.EqualityMatcher.basicExplain(this.expected, this.actual));
+	sb.push(JSSpec.EqualityMatcher.diffExplain(this.expected, this.actual));	
+	return sb.join("");
+};
+
+/**
+ * PatternMatcher
+ */
+JSSpec.PatternMatcher = function(actual, pattern, condition) {
+	this.actual = actual;
+	this.pattern = pattern;
+	this.condition = condition;
+	this.match = false;
+	this.explaination = this.makeExplain();
+};
+
+JSSpec.PatternMatcher.createInstance = function(actual, pattern, condition) {
+	return new JSSpec.PatternMatcher(actual, pattern, condition);
+};
+
+JSSpec.PatternMatcher.prototype.makeExplain = function() {
+	var sb;
+	if(this.actual == null || this.actual._type != 'String') {
+		sb = [];
+		sb.push('<p>actual value:</p>');
+		sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.actual) + '</p>');
+		sb.push('<p>should ' + (this.condition ? '' : 'not') + ' match with pattern:</p>');
+		sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.pattern) + '</p>');
+		sb.push('<p>but pattern matching cannot be performed.</p>');
+		return sb.join("");
+	} else {
+		this.match = this.condition == !!this.actual.match(this.pattern);
+		if(this.match) return "";
+		
+		sb = [];
+		sb.push('<p>actual value:</p>');
+		sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.actual) + '</p>');
+		sb.push('<p>should ' + (this.condition ? '' : 'not') + ' match with pattern:</p>');
+		sb.push('<p style="margin-left:2em;">' + JSSpec.util.inspect(this.pattern) + '</p>');
+		return sb.join("");
+	}
+};
+
+JSSpec.PatternMatcher.prototype.matches = function() {
+	return this.match;
+};
+
+JSSpec.PatternMatcher.prototype.explain = function() {
+	return this.explaination;
+};
+
+/**
+ * Domain Specific Languages
+ */
+JSSpec.DSL = {};
+
+JSSpec.DSL.forString = {
+	normalizeHtml: function() {
+		var html = this;
+		
+		// Uniformize quotation, turn tag names and attribute names into lower case
+		html = html.replace(/<(\/?)(\w+)([^>]*?)>/img, function(str, closingMark, tagName, attrs) {
+			var sortedAttrs = JSSpec.util.sortHtmlAttrs(JSSpec.util.correctHtmlAttrQuotation(attrs).toLowerCase())
+			return "<" + closingMark + tagName.toLowerCase() + sortedAttrs + ">"
+		});
+		
+		// validation self-closing tags
+		html = html.replace(/<(br|hr|img)([^>]*?)>/mg, function(str, tag, attrs) {
+			return "<" + tag + attrs + " />";
+		});
+		
+		// append semi-colon at the end of style value
+		html = html.replace(/style="(.*?)"/mg, function(str, styleStr) {
+			styleStr = JSSpec.util.sortStyleEntries(styleStr.strip()); // for Safari
+			if(styleStr.charAt(styleStr.length - 1) != ';') styleStr += ";"
+			
+			return 'style="' + styleStr + '"'
+		});
+		
+		// sort style entries
+		
+		// remove empty style attributes
+		html = html.replace(/ style=";"/mg, "");
+		
+		// remove new-lines
+		html = html.replace(/\r/mg, '');
+		html = html.replace(/\n/mg, '');
+			
+		return html;
+	}
+};
+
+
+
+JSSpec.DSL.describe = function(context, entries) {
+	JSSpec.specs.push(new JSSpec.Spec(context, entries));
+};
+
+JSSpec.DSL.value_of = function(target) {
+	if(JSSpec._secondPass) return {};
+	
+	var subject = new JSSpec.DSL.Subject(target);
+	return subject;
+};
+
+JSSpec.DSL.Subject = function(target) {
+	this.target = target;
+};
+
+JSSpec.DSL.Subject.prototype._type = 'Subject';
+
+JSSpec.DSL.Subject.prototype.should_fail = function(message) {
+	JSSpec._assertionFailure = {message:message};
+	throw JSSpec._assertionFailure;
+};
+
+JSSpec.DSL.Subject.prototype.should_be = function(expected) {
+	var matcher = JSSpec.EqualityMatcher.createInstance(expected, this.target);
+	if(!matcher.matches()) {
+		JSSpec._assertionFailure = {message:matcher.explain()};
+		throw JSSpec._assertionFailure;
+	}
+};
+
+JSSpec.DSL.Subject.prototype.should_not_be = function(expected) {
+	// TODO JSSpec.EqualityMatcher should support 'condition'
+	var matcher = JSSpec.EqualityMatcher.createInstance(expected, this.target);
+	if(matcher.matches()) {
+		JSSpec._assertionFailure = {message:"'" + this.target + "' should not be '" + expected + "'"};
+		throw JSSpec._assertionFailure;
+	}
+};
+
+JSSpec.DSL.Subject.prototype.should_be_empty = function() {
+	this.should_have(0, this.getType() == 'String' ? 'characters' : 'items');
+};
+
+JSSpec.DSL.Subject.prototype.should_not_be_empty = function() {
+	this.should_have_at_least(1, this.getType() == 'String' ? 'characters' : 'items');
+};
+
+JSSpec.DSL.Subject.prototype.should_be_true = function() {
+	this.should_be(true);
+};
+
+JSSpec.DSL.Subject.prototype.should_be_false = function() {
+	this.should_be(false);
+};
+
+JSSpec.DSL.Subject.prototype.should_be_null = function() {
+	this.should_be(null);
+};
+
+JSSpec.DSL.Subject.prototype.should_be_undefined = function() {
+	this.should_be(undefined);
+};
+
+JSSpec.DSL.Subject.prototype.should_not_be_null = function() {
+	this.should_not_be(null);
+};
+
+JSSpec.DSL.Subject.prototype.should_not_be_undefined = function() {
+	this.should_not_be(undefined);
+};
+
+JSSpec.DSL.Subject.prototype._should_have = function(num, property, condition) {
+	var matcher = JSSpec.PropertyLengthMatcher.createInstance(num, property, this.target, condition);
+	if(!matcher.matches()) {
+		JSSpec._assertionFailure = {message:matcher.explain()};
+		throw JSSpec._assertionFailure;
+	}
+};
+
+JSSpec.DSL.Subject.prototype.should_have = function(num, property) {
+	this._should_have(num, property, "exactly");
+};
+
+JSSpec.DSL.Subject.prototype.should_have_exactly = function(num, property) {
+	this._should_have(num, property, "exactly");
+};
+
+JSSpec.DSL.Subject.prototype.should_have_at_least = function(num, property) {
+	this._should_have(num, property, "at least");
+};
+
+JSSpec.DSL.Subject.prototype.should_have_at_most = function(num, property) {
+	this._should_have(num, property, "at most");
+};
+
+JSSpec.DSL.Subject.prototype.should_include = function(expected) {
+	var matcher = JSSpec.IncludeMatcher.createInstance(this.target, expected, true);
+	if(!matcher.matches()) {
+		JSSpec._assertionFailure = {message:matcher.explain()};
+		throw JSSpec._assertionFailure;
+	}
+};
+
+JSSpec.DSL.Subject.prototype.should_not_include = function(expected) {
+	var matcher = JSSpec.IncludeMatcher.createInstance(this.target, expected, false);
+	if(!matcher.matches()) {
+		JSSpec._assertionFailure = {message:matcher.explain()};
+		throw JSSpec._assertionFailure;
+	}
+};
+
+JSSpec.DSL.Subject.prototype.should_match = function(pattern) {
+	var matcher = JSSpec.PatternMatcher.createInstance(this.target, pattern, true);
+	if(!matcher.matches()) {
+		JSSpec._assertionFailure = {message:matcher.explain()};
+		throw JSSpec._assertionFailure;
+	}
+}
+JSSpec.DSL.Subject.prototype.should_not_match = function(pattern) {
+	var matcher = JSSpec.PatternMatcher.createInstance(this.target, pattern, false);
+	if(!matcher.matches()) {
+		JSSpec._assertionFailure = {message:matcher.explain()};
+		throw JSSpec._assertionFailure;
+	}
+};
+
+JSSpec.DSL.Subject.prototype.getType = function() {
+	if(typeof this.target == 'undefined') {
+		return 'undefined';
+	} else if(this.target == null) {
+		return 'null';
+	} else if(this.target._type) {
+		return this.target._type;
+	} else if(JSSpec.util.isDomNode(this.target)) {
+		return 'DomNode';
+	} else {
+		return 'object';
+	}
+};
+
+/**
+ * Utilities
+ */
+JSSpec.util = {
+	escapeTags: function(string) {
+		return string.replace(/</img, '&lt;').replace(/>/img, '&gt;');
+	},
+	parseOptions: function(defaults) {
+		var options = defaults;
+		
+		var url = location.href;
+		var queryIndex = url.indexOf('?');
+		if(queryIndex == -1) return options;
+		
+		var query = url.substring(queryIndex + 1);
+		var pairs = query.split('&');
+		for(var i = 0; i < pairs.length; i++) {
+			var tokens = pairs[i].split('=');
+			options[tokens[0]] = tokens[1];
+		}
+		
+		return options;
+	},
+	correctHtmlAttrQuotation: function(html) {
+		html = html.replace(/(\w+)=['"]([^'"]+)['"]/mg,function (str, name, value) {return name + '=' + '"' + value + '"';});
+		html = html.replace(/(\w+)=([^ '"]+)/mg,function (str, name, value) {return name + '=' + '"' + value + '"';});
+		html = html.replace(/'/mg, '"');
+		
+		return html;
+	},
+	sortHtmlAttrs: function(html) {
+		var attrs = [];
+		html.replace(/((\w+)="[^"]+")/mg, function(str, matched) {
+			attrs.push(matched);
+		});
+		return attrs.length == 0 ? "" : " " + attrs.sort().join(" ");
+	},
+	sortStyleEntries: function(styleText) {
+		var entries = styleText.split(/; /);
+		return entries.sort().join("; ");
+	},
+	escapeHtml: function(str) {
+		if(!this._div) {
+			this._div = document.createElement("DIV");
+			this._text = document.createTextNode('');
+			this._div.appendChild(this._text);
+		}
+		this._text.data = str;
+		return this._div.innerHTML;
+	},
+	isDomNode: function(o) {
+		// TODO: make it more stricter
+		return (typeof o.nodeName == 'string') && (typeof o.nodeType == 'number');
+	},
+	inspectDomPath: function(o) {
+		var sb = [];
+		while(o && o.nodeName != '#document' && o.parent) {
+			var siblings = o.parentNode.childNodes;
+			for(var i = 0; i < siblings.length; i++) {
+				if(siblings[i] == o) {
+					sb.push(o.nodeName + (i == 0 ? '' : '[' + i + ']'));
+					break;
+				}
+			}
+			o = o.parentNode;
+		}
+		return sb.join(" &gt; ");
+	},
+	inspectDomNode: function(o) {
+		if(o.nodeType == 1) {
+			var nodeName = o.nodeName.toLowerCase();
+			var sb = [];
+			sb.push('<span class="dom_value">');
+			sb.push("&lt;");
+			sb.push(nodeName);
+			
+			var attrs = o.attributes;
+			for(var i = 0; i < attrs.length; i++) {
+				if(
+					attrs[i].nodeValue &&
+					attrs[i].nodeName != 'contentEditable' &&
+					attrs[i].nodeName != 'style' &&
+					typeof attrs[i].nodeValue != 'function'
+				) sb.push(' <span class="dom_attr_name">' + attrs[i].nodeName.toLowerCase() + '</span>=<span class="dom_attr_value">"' + attrs[i].nodeValue + '"</span>');
+			}
+			if(o.style && o.style.cssText) {
+				sb.push(' <span class="dom_attr_name">style</span>=<span class="dom_attr_value">"' + o.style.cssText + '"</span>');
+			}
+			sb.push('&gt;');
+			sb.push(JSSpec.util.escapeHtml(o.innerHTML));
+			sb.push('&lt;/' + nodeName + '&gt;');
+			sb.push(' <span class="dom_path">(' + JSSpec.util.inspectDomPath(o) + ')</span>' );
+			sb.push('</span>');
+			return sb.join("");
+		} else if(o.nodeType == 3) {
+			return '<span class="dom_value">#text ' + o.nodeValue + '</span>';
+		} else {
+			return '<span class="dom_value">UnknownDomNode</span>';
+		}
+	},
+	inspect: function(o, dontEscape, emphasisKey) {
+		var sb, inspected;
+
+		if(typeof o == 'undefined') return '<span class="undefined_value">undefined</span>';
+		if(o == null) return '<span class="null_value">null</span>';
+		if(o._type == 'String') return '<span class="string_value">"' + (dontEscape ? o : JSSpec.util.escapeHtml(o)) + '"</span>';
+
+		if(o._type == 'Date') {
+			return '<span class="date_value">"' + o.toString() + '"</span>';
+		}
+		
+		if(o._type == 'Number') return '<span class="number_value">' + (dontEscape ? o : JSSpec.util.escapeHtml(o)) + '</span>';
+		
+		if(o._type == 'Boolean') return '<span class="boolean_value">' + o + '</span>';
+
+		if(o._type == 'RegExp') return '<span class="regexp_value">' + JSSpec.util.escapeHtml(o.toString()) + '</span>';
+
+		if(JSSpec.util.isDomNode(o)) return JSSpec.util.inspectDomNode(o);
+
+		if(o._type == 'Array' || typeof o.length != 'undefined') {
+			sb = [];
+			for(var i = 0; i < o.length; i++) {
+				inspected = JSSpec.util.inspect(o[i]);
+				sb.push(i == emphasisKey ? ('<strong>' + inspected + '</strong>') : inspected);
+			}
+			return '<span class="array_value">[' + sb.join(', ') + ']</span>';
+		}
+		
+		// object
+		sb = [];
+		for(var key in o) {
+			if(key == 'should') continue;
+			
+			inspected = JSSpec.util.inspect(key) + ":" + JSSpec.util.inspect(o[key]);
+			sb.push(key == emphasisKey ? ('<strong>' + inspected + '</strong>') : inspected);
+		}
+		return '<span class="object_value">{' + sb.join(', ') + '}</span>';
+	}
+};
+
+describe = JSSpec.DSL.describe;
+behavior_of = JSSpec.DSL.describe;
+value_of = JSSpec.DSL.value_of;
+expect = JSSpec.DSL.value_of; // @deprecated
+
+String.prototype._type = "String";
+Number.prototype._type = "Number";
+Date.prototype._type = "Date";
+Array.prototype._type = "Array";
+Boolean.prototype._type = "Boolean";
+RegExp.prototype._type = "RegExp";
+
+var targets = [Array.prototype, Date.prototype, Number.prototype, String.prototype, Boolean.prototype, RegExp.prototype];
+
+String.prototype.normalizeHtml = JSSpec.DSL.forString.normalizeHtml;
+String.prototype.asHtml = String.prototype.normalizeHtml; //@deprecated
+
+
+
+/**
+ * Main
+ */
+JSSpec.defaultOptions = {
+	autorun: 1,
+	specIdBeginsWith: 0,
+	exampleIdBeginsWith: 0,
+	autocollapse: 1
+};
+JSSpec.options = JSSpec.util.parseOptions(JSSpec.defaultOptions);
+
+JSSpec.Spec.id = JSSpec.options.specIdBeginsWith;
+JSSpec.Example.id = JSSpec.options.exampleIdBeginsWith;
+
+
+
+window.onload = function() {
+	if(JSSpec.specs.length > 0) {
+		if(!JSSpec.options.inSuite) {
+			JSSpec.runner = new JSSpec.Runner(JSSpec.specs, new JSSpec.Logger());
+			if(JSSpec.options.rerun) {
+				JSSpec.runner.rerun(decodeURIComponent(JSSpec.options.rerun));
+			} else {
+				JSSpec.runner.run();
+			}
+		} else {
+			// in suite, send all specs to parent
+			var parentWindow = window.frames.parent.window;
+			for(var i = 0; i < JSSpec.specs.length; i++) {
+				parentWindow.JSSpec.specs.push(JSSpec.specs[i]);
+			}
+		}
+	} else {
+		var links = document.getElementById('list').getElementsByTagName('A');
+		var frameContainer = document.createElement('DIV');
+		frameContainer.style.display = 'none';
+		document.body.appendChild(frameContainer);
+		
+		for(var i = 0; i < links.length; i++) {
+			var frame = document.createElement('IFRAME');
+			frame.src = links[i].href + '?inSuite=0&specIdBeginsWith=' + (i * 10000) + '&exampleIdBeginsWith=' + (i * 10000);
+			frameContainer.appendChild(frame);
+		}
+	}
+}
