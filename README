@@ -15,12 +15,16 @@ CHANGELOG
  - Added Rhino into the repository for convience
  - Changed the rake task to run all of the files in
     spec/javascripts/*_spec.js at once using runner.js
+2008/08/20
+ - Added simple spec compiler to create html files that can be run in the browser.
 
 TODO
- - Create a way to compile specs into an html file that can be run in the browser
+ - Make it easier to change the html fixture in the compiled specs.
  - Make color optional
+ - Make the runner and the compiler accept wildcards in their arguments
 
 KNOWN ISSUES
  - When prototype is included and a spec fails the error report lists:
      'Cannot find function each in object [ "" ].'
  - Expected and actual values don't appear in the report when a spec fails
+ - Setting window.location will cause weird behavior when specs are compiled (see TODO item)
