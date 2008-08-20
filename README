@@ -1,5 +1,18 @@
 This collection of files is useful for getting a Rails app up and running with headless JSSpec tests for your JavaScript files.
 
+INSTALLING
+ - Unpack the contents of this repo to RAILS_ROOT/spec/javascripts
+ - Move test_jsspec.rake into RAILS_ROOT/lib/tasks
+
+WRITING SPECS
+ - Create the file in RAILS_ROOT/spec/javascripts/your_name_spec.js (The filename should end in _spec.js)
+ - Write the specs directly in the file.
+
+RUNNING SPECS
+  - To run specs on the command line run rake test:jsspec
+  - To run specs in the browser run rake test:jsspec:compile and then open the file RAILS_ROOT/spec/javascripts/compiled/suite.html in your browser of choice
+  - You can also run one spec at a time with either method by providing TEST=foo_spec.js (The compiled filename will change to foo_spec.html)
+
 CHANGELOG
 
 2008/08/19 - mdotterer
