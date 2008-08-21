@@ -12,7 +12,7 @@ JSSpec.ConsoleLogger.prototype.onRunnerStart = function() {
 };
 
 JSSpec.ConsoleLogger.prototype.onRunnerEnd = function() {
-  print("\033[37m")
+  print("")
     for(var i = 0; i < this.failures.length; i++) {
     print((i + 1) + ") " + this.failures[i].name +
           " FAILED: " + this.failures[i].message);
@@ -40,7 +40,7 @@ JSSpec.ConsoleLogger.prototype.onExampleStart = function(example) {
 };
 
 JSSpec.ConsoleLogger.prototype.onExampleEnd = function(example) {
-  java.lang.System.out.print(example.exception ? "\033[31mF" : "\033[32m.");
+  java.lang.System.out.print(example.exception ? "\033[31mF\033[37m" : "\033[32m.\033[37m");
   if(example.exception) {
     this.failures[this.failures.length] = {
     name: this.currentSpec.context + ' ' +example.name,

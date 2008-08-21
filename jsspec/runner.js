@@ -1,21 +1,20 @@
 load("env.js");
-load("jsspec/config.js");
+
+//Keeps objects added to Event from being added to every object
+Event = function() {
+}
+
+load("config.js");
 load("jsspec/JSSpec.js");
 load("jsspec/console_logger.js");
 
-JSSpec.Spec.prototype.originalExtractOutSpecialEntries = JSSpec.Spec.prototype.extractOutSpecialEntries;
-JSSpec.Spec.prototype.extractOutSpecialEntries = function(entries) {
-  this.originalExtractOutSpecialEntries(entries);
-  delete entries['isLeftClick'];
-  delete entries['isMiddleClick'];
-  delete entries['isRightClick'];
-  delete entries['element'];
-  delete entries['findElement'];
-  delete entries['pointer'];
-  delete entries['pointerX'];
-  delete entries['pointerY'];
-  delete entries['stop'];
-};
+
+if(Prototype) {
+  //Prototype mucks up the Array#map that comes with rhino so we need to fix the
+  //  places that use it.
+  DOMNodeList.prototype.each = Array.prototype.each;
+  DOMNodeList.prototype._each = Array.prototype._each;
+ }
 
 loadedFixtures = {};
 

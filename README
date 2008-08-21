@@ -21,6 +21,7 @@ CHANGELOG
 2008/08/21 - mdotterer
  - Added an html fixturing method that can be used in both command line and compiled specs
  - Changed rake task names to match rspec rake task names
+ - Fixed issue where innerHTML was broken when prototype was included
 2008/08/20 - mdotterer
  - Added simple spec compiler to create html files that can be run in the browser.
 2008/08/19 - mdotterer
@@ -43,7 +44,6 @@ TODO
  - Make the runner and the compiler accept wildcards in their arguments
 
 KNOWN ISSUES
- - When prototype is included and a spec fails the error report lists:
-     'Cannot find function each in object [ "" ].'
  - Expected and actual values don't appear in the report when a spec fails
  - Testing equality of Protoype objects doesn't seem to work. For example: value_of($$('#asdf')).should_include($('asdf')); seems to fail.
+ - Location of errors doesn't work. (Currently thet are not displayed because of this)
