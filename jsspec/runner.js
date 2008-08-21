@@ -15,6 +15,26 @@ JSSpec.Spec.prototype.extractOutSpecialEntries = function(entries) {
   delete entries['pointerX'];
   delete entries['pointerY'];
   delete entries['stop'];
+};
+
+loadedFixtures = {};
+
+function fixture(name) {
+  var html;
+  if(!loadedFixtures[name]) {
+    var filename = "fixtures/"+name+".html";
+    var file = new java.io.BufferedReader(new java.io.FileReader(filename));
+    html = "";
+    var line;
+    while ((line = file.readLine()) != null) {
+      html += line + "\n";
+    }
+    loadedFixtures[name] = html;
+  } else {
+    html = loadedFixtures[name];
+  }
+
+  document.getElementById('test-context').innerHTML = html;
 }
 
 for(var i=0; i < arguments.length; i++) {

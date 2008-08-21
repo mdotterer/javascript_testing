@@ -23,6 +23,17 @@ function jsIncludeTag(filename) {
   return '<script type="text/javascript" src="../'+filename+'"></script>';
 }
 
+loadedFixtures = {};
+
+function generateFixtureLoad(name) {
+  var html = dumpFile("fixtures/"+name+".html");
+  html = html.replace(/\\/g, '\\\\');
+  html = html.replace(/\n/g, '\\n');
+  html = html.replace(/"/g, '\\"'); //');//The comment is for my poor editor which_irb is horribly confused by this statement...
+  loadedFixtures[name] = true;
+  return 'loadFixture("'+name+'", "'+html+'");\n';
+}
+
 var scriptLines = '<link rel="stylesheet" type="text/css" href="../jsspec/JSSpec.css" />';
 eachLineInFile("jsspec/config.js", function(line) {
     match = /^\s*load\(["'](.*)['"]\);\s*$/.exec(line);
@@ -31,11 +42,20 @@ eachLineInFile("jsspec/config.js", function(line) {
     }
   });
 scriptLines += "\n" + jsIncludeTag("jsspec/jsspec.js");
+scriptLines += "\n" + jsIncludeTag("jsspec/compiled_fixtures.js");
 scriptLines += "\n" + '<script type="text/javascript">// <![CDATA[\n';
+var fixtureLoads = "";
 for(var i = 0; i < arguments.length; i++) {
-  scriptLines += dumpFile(arguments[i]);
+  eachLineInFile(arguments[i], function(line) {
+      scriptLines += line + '\n';
+      var loadsFixture = /fixture\(["'](.*)['"]\)/.exec(line);
+      if(loadsFixture && !loadedFixtures[loadsFixture[1]]) {
+        fixtureLoads += generateFixtureLoad(loadsFixture[1]);
+      }
+    });
  }
-scriptLines += '// ]]></script>';
+scriptLines += fixtureLoads;
+scriptLines += '// ]]></script>\n';
 
 var compiledDir = new File("compiled");
 if(compiledDir.exists()) {
