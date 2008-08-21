@@ -1,7 +1,7 @@
 
-namespace :test do
+namespace :spec do
   desc "Runs all the JSSpec tests and collects the results"
-  task :jsspec do
+  task :javascripts do
     Dir.chdir("spec/javascripts") do
       all_fine = true
       files = ENV["TEST"] ? ENV["TEST"] : Dir.glob("*_spec.js").join(" ")
@@ -9,7 +9,7 @@ namespace :test do
       raise "JSSpec test failures" unless all_fine
     end
   end
-  namespace :jsspec do
+  namespace :javascripts do
     desc "Compiles all the JSSpec tests into an html file that can be run in the browser"
     task :compile do
       Dir.chdir("spec/javascripts") do

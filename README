@@ -13,13 +13,14 @@ WRITING SPECS
    - That fixture will then be available for both command line and compiled specs
 
 RUNNING SPECS
-  - To run specs on the command line run rake test:jsspec
-  - To run specs in the browser run rake test:jsspec:compile and then open the file RAILS_ROOT/spec/javascripts/compiled/suite.html in your browser of choice
+  - To run specs on the command line run rake spec:javascripts
+  - To run specs in the browser run rake spec:javascripts:compile and then open the file RAILS_ROOT/spec/javascripts/compiled/suite.html in your browser of choice
   - You can also run one spec at a time with either method by providing TEST=foo_spec.js (The compiled filename will change to foo_spec.html)
 
 CHANGELOG
 2008/08/21 - mdotterer
  - Added an html fixturing method that can be used in both command line and compiled specs
+ - Changed rake task names to match rspec rake task names
 2008/08/20 - mdotterer
  - Added simple spec compiler to create html files that can be run in the browser.
 2008/08/19 - mdotterer
