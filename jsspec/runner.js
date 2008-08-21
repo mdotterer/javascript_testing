@@ -1,13 +1,8 @@
 load("env.js");
 
-//Keeps objects added to Event from being added to every object
-Event = function() {
-}
-
 load("config.js");
 load("jsspec/JSSpec.js");
 load("jsspec/console_logger.js");
-
 
 if(Prototype) {
   //Prototype mucks up the Array#map that comes with rhino so we need to fix the

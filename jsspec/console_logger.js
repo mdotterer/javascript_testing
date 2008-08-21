@@ -40,7 +40,7 @@ JSSpec.ConsoleLogger.prototype.onExampleStart = function(example) {
 };
 
 JSSpec.ConsoleLogger.prototype.onExampleEnd = function(example) {
-  java.lang.System.out.print(example.exception ? "\033[31mF\033[37m" : "\033[32m.\033[37m");
+  java.lang.System.out.print(example.exception ? "\033[31mF\033[0m" : "\033[32m.\033[0m");
   if(example.exception) {
     this.failures[this.failures.length] = {
     name: this.currentSpec.context + ' ' +example.name,

@@ -45,5 +45,5 @@ TODO
 
 KNOWN ISSUES
  - Expected and actual values don't appear in the report when a spec fails
- - Testing equality of Protoype objects doesn't seem to work. For example: value_of($$('#asdf')).should_include($('asdf')); seems to fail.
+ - should_include() with prototype objects doesn't seem to be working properly. It seems to work for the first item in the actual, but crash for any other item.
  - Location of errors doesn't work. (Currently thet are not displayed because of this)
