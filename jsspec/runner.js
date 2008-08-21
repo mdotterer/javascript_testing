@@ -1,5 +1,5 @@
-load("env.js");
-
+load("rhino/env.js");
+load("rhino/env_monkey_patches.js");
 load("config.js");
 load("jsspec/JSSpec.js");
 load("jsspec/console_logger.js");
