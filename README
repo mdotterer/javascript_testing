@@ -18,6 +18,8 @@ RUNNING SPECS
   - You can also run one spec at a time with either method by providing TEST=foo_spec.js (The compiled filename will change to foo_spec.html)
 
 CHANGELOG
+2008/08/22 - mdotterer
+ - Added a monkey patch to JSSpec to make to JSSpec.util.isDomNode work for DOMNodes created by env.js (Fixes include bug with prototype elements)
 2008/08/21 - mdotterer
  - Added an html fixturing method that can be used in both command line and compiled specs
  - Changed rake task names to match rspec rake task names
@@ -45,5 +47,4 @@ TODO
 
 KNOWN ISSUES
  - Expected and actual values don't appear in the report when a spec fails
- - should_include() with prototype objects doesn't seem to be working properly. It seems to work for the first item in the actual, but crash for any other item.
  - Location of errors doesn't work. (Currently thet are not displayed because of this)

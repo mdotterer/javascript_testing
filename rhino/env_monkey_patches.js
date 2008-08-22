@@ -26,4 +26,7 @@
         return attr;
       }
     });
+
+  DOMNode.prototype.isDomNode = true;
+
  })();

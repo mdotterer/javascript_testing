@@ -11,6 +11,10 @@ if(Prototype) {
   DOMNodeList.prototype._each = Array.prototype._each;
  }
 
+JSSpec.util.isDomNode = function(object) {
+  return object.isDomNode;
+}
+
 loadedFixtures = {};
 
 function fixture(name) {
